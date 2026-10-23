@@ -29,7 +29,6 @@ import kotlin.math.cos
 import kotlin.math.sin
 
 object BroDesign {
-    // Cyber-Tactile Palette
     val ObsidianBg = Color(0xFF090A0F)
     val CarbonSurface = Color(0xFF12151E)
     val ElevatedTactile = Color(0xFF1A1F2C)
@@ -41,12 +40,10 @@ object BroDesign {
     val BorderGrid = Color(0xFF262C3A)
     val DangerRed = Color(0xFFFF2A54)
 
-    // Chamfered Tactical Shapes (Cut corners instead of soft glass)
     val CardShape = CutCornerShape(topStart = 12.dp, bottomEnd = 12.dp, topEnd = 4.dp, bottomStart = 4.dp)
     val ComposerShape = CutCornerShape(topStart = 16.dp, bottomEnd = 16.dp, topEnd = 4.dp, bottomStart = 4.dp)
     val PillShape = CutCornerShape(6.dp)
 
-    // Typography
     val HeaderStyle = TextStyle(
         fontFamily = FontFamily.Monospace,
         fontWeight = FontWeight.Black,
@@ -86,9 +83,6 @@ fun TacticalCard(
     )
 }
 
-/**
- * Signal Hex Logo + Cyber-Tactile Radar Voice Core
- */
 @Composable
 fun CyberRadarCore(
     isActive: Boolean,
@@ -125,7 +119,6 @@ fun CyberRadarCore(
             val radius = (this.size.minDimension / 2f) * pulse
             val center = Offset(this.size.width / 2f, this.size.height / 2f)
 
-            // Outer Segmented Tactical Ring
             rotate(rotation, center) {
                 for (i in 0 until 6) {
                     drawArc(
@@ -138,7 +131,6 @@ fun CyberRadarCore(
                 }
             }
 
-            // Inner Signal Hexagon
             val hexPath = Path()
             val hexRadius = radius * 0.62f
             for (i in 0 until 6) {
