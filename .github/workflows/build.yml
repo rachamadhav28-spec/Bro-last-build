@@ -34,9 +34,7 @@ jobs:
         run: |
           set -o pipefail
           gradle assembleDebug --stacktrace 2>&1 | tee build.log || {
-            grep -E "^e: |error:|What went wrong|Execution failed|^> " build.log | head -60 | while IFS= read -r line; do
-              echo "::error::${line}"
-            done
+            grep -E "^e: |What went wrong|Execution failed|error:" -A2 build.log | grep -v "^--$" | head -40 | sed 's/%/%25/g' | awk 'BEGIN{ORS="%0A"; printf "::error::"} {print}'; echo
             exit 1
           }
 
