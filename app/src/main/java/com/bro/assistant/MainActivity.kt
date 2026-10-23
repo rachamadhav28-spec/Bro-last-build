@@ -450,3 +450,192 @@ fun MainChatHudView(
                             style = BroDesign.HudLabelStyle.copy(
                                 color = if (isUser) BroDesign.CyberCyan else BroDesign.VoltLime,
                                 fontSize = 9.sp
+                            )
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(text = msg.text, style = BroDesign.BodyStyle.copy(fontSize = 14.sp))
+                    }
+                }
+            }
+        }
+
+        // Card-style Tactical Composer (Status left, Input center, Mic / Send / Stop right)
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(BroDesign.CarbonSurface)
+                .border(1.5.dp, BroDesign.BorderGrid, BroDesign.ComposerShape)
+                .padding(8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text("STATUS: $statusText", style = BroDesign.HudLabelStyle.copy(fontSize = 9.sp))
+                Text("ROUTE: ${skill.name}", style = BroDesign.HudLabelStyle.copy(color = BroDesign.CyberCyan, fontSize = 9.sp))
+            }
+            Spacer(modifier = Modifier.height(6.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(BroDesign.PillShape)
+                        .background(BroDesign.ObsidianBg)
+                        .border(1.dp, BroDesign.BorderGrid, BroDesign.PillShape)
+                        .padding(horizontal = 10.dp, vertical = 10.dp)
+                ) {
+                    if (typedInput.isEmpty()) {
+                        Text(
+                            text = "Transmit command to BRO...",
+                            style = BroDesign.BodyStyle.copy(color = BroDesign.MutedSteel, fontSize = 13.sp)
+                        )
+                    }
+                    BasicTextField(
+                        value = typedInput,
+                        onValueChange = onInputChanged,
+                        textStyle = BroDesign.BodyStyle.copy(fontSize = 13.sp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                Spacer(modifier = Modifier.width(6.dp))
+                IconButton(
+                    onClick = onMicClicked,
+                    modifier = Modifier
+                        .size(38.dp)
+                        .clip(BroDesign.PillShape)
+                        .background(if (isListening) BroDesign.HyperOrange else BroDesign.ElevatedTactile)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Mic,
+                        contentDescription = "Mic",
+                        tint = if (isListening) Color.Black else BroDesign.VoltLime,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(4.dp))
+                IconButton(
+                    onClick = onSend,
+                    modifier = Modifier
+                        .size(38.dp)
+                        .applyBroMotion(sendAnimId, reducedMotion)
+                        .clip(BroDesign.PillShape)
+                        .background(BroDesign.VoltLime)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Send,
+                        contentDescription = "Send",
+                        tint = Color.Black,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(4.dp))
+                IconButton(
+                    onClick = onStop,
+                    modifier = Modifier
+                        .size(38.dp)
+                        .clip(BroDesign.PillShape)
+                        .background(BroDesign.DangerRed)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Stop,
+                        contentDescription = "Cancel Job",
+                        tint = Color.White,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun VaultSettingsPanel(
+    context: android.content.Context,
+    themeMode: String,
+    onThemeChanged: (String) -> Unit
+) {
+    var feedbackMsg by remember { mutableStateOf("Keys are whitespace-stripped & AES256-GCM encrypted.") }
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        item {
+            TacticalCard(accentColor = BroDesign.CyberCyan) {
+                Text("SECRETBOX ENCRYPTED VAULT", style = BroDesign.HeaderStyle.copy(fontSize = 15.sp))
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(feedbackMsg, style = BroDesign.HudLabelStyle.copy(color = BroDesign.VoltLime, fontSize = 10.sp))
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf("DARK", "LIGHT", "AUTO").forEach { mode ->
+                        val sel = themeMode.equals(mode, ignoreCase = true)
+                        Box(
+                            modifier = Modifier
+                                .clip(BroDesign.PillShape)
+                                .background(if (sel) BroDesign.VoltLime else BroDesign.ElevatedTactile)
+                                .clickable { onThemeChanged(mode) }
+                                .padding(horizontal = 10.dp, vertical = 6.dp)
+                        ) {
+                            Text(
+                                text = "THEME: $mode",
+                                style = BroDesign.HudLabelStyle.copy(
+                                    color = if (sel) Color.Black else BroDesign.CrispWhite,
+                                    fontSize = 10.sp
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        items(ProviderId.values().toList(), key = { it.name }) { provider ->
+            if (provider != ProviderId.OPENROUTER_CLAUDE) {
+                var keyInput by remember { mutableStateOf(SecretBox.getKey(context, provider.name)) }
+                TacticalCard {
+                    Text(provider.displayName, style = BroDesign.HeaderStyle.copy(fontSize = 14.sp))
+                    Text("Format: ${provider.keyHint}", style = BroDesign.HudLabelStyle.copy(color = BroDesign.MutedSteel, fontSize = 10.sp))
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(BroDesign.PillShape)
+                                .background(BroDesign.ObsidianBg)
+                                .border(1.dp, BroDesign.BorderGrid, BroDesign.PillShape)
+                                .padding(horizontal = 10.dp, vertical = 8.dp)
+                        ) {
+                            if (keyInput.isEmpty()) {
+                                Text("Paste ${provider.name} key...", style = BroDesign.BodyStyle.copy(color = BroDesign.MutedSteel, fontSize = 12.sp))
+                            }
+                            BasicTextField(
+                                value = keyInput,
+                                onValueChange = { keyInput = it },
+                                textStyle = BroDesign.BodyStyle.copy(fontSize = 12.sp),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Box(
+                            modifier = Modifier
+                                .clip(BroDesign.PillShape)
+                                .background(BroDesign.VoltLime)
+                                .clickable {
+                                    val res = SecretBox.saveKey(context, provider.name, keyInput)
+                                    feedbackMsg = res.fold(
+                                        onSuccess = { "✔ Saved ${provider.displayName} key!" },
+                                        onFailure = { "❌ ${it.localizedMessage}" }
+                                    )
+                                }
+                                .padding(horizontal = 12.dp, vertical = 8.dp)
+                        ) {
+                            Text("SAVE", style = BroDesign.HudLabelStyle.copy(color = Color.Black, fontSize = 10.sp))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
