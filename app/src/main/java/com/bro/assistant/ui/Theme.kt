@@ -33,7 +33,7 @@ private val BroLightPalette = lightColorScheme(
 
 @Composable
 fun BroTheme(
-    themeMode: String = "DARK", // DARK, LIGHT, AUTO
+    themeMode: String = "DARK",
     content: @Composable () -> Unit
 ) {
     val useDark = when (themeMode.uppercase()) {
