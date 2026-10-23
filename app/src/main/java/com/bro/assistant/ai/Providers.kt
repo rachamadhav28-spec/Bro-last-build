@@ -51,11 +51,8 @@ object Providers {
         .writeTimeout(30, TimeUnit.SECONDS)
         .build()
 
-    // 60-second cooldown tracker after HTTP 429 or transient failure
     private val cooldownUntil = ConcurrentHashMap<ProviderId, Long>()
     private const val COOLDOWN_MS = 60_000L
-
-    // Active HTTP Call reference so the user can cancel long jobs anytime
     private val activeCall = AtomicReference<Call?>(null)
 
     fun cancelActiveJob() {
@@ -69,91 +66,44 @@ object Providers {
         return false
     }
 
-    fun cooldownRemainingSeconds(provider: ProviderId): Int {
-        val until = cooldownUntil[provider] ?: return 0
-        val rem = ((until - System.currentTimeMillis()) / 1000L).toInt()
-        return if (rem > 0) rem else 0
-    }
-
     private fun markCooldown(provider: ProviderId) {
         cooldownUntil[provider] = System.currentTimeMillis() + COOLDOWN_MS
     }
 
-    /**
-     * Skill-based order:
-     * Claude first for CODE, LONG, REASON, and GENERAL; last for FAST.
-     */
     fun getSkillOrder(skill: BroSkill): List<ProviderId> {
         return when (skill) {
             BroSkill.FAST -> listOf(
-                ProviderId.GROQ,
-                ProviderId.CEREBRAS,
-                ProviderId.GEMINI,
-                ProviderId.MISTRAL,
-                ProviderId.OPENROUTER,
-                ProviderId.CLOUDFLARE,
-                ProviderId.GITHUB,
-                ProviderId.NVIDIA,
-                ProviderId.COLAB_QWEN,
-                ProviderId.OPENROUTER_CLAUDE,
-                ProviderId.CLAUDE
+                ProviderId.GROQ, ProviderId.CEREBRAS, ProviderId.GEMINI,
+                ProviderId.MISTRAL, ProviderId.OPENROUTER, ProviderId.CLOUDFLARE,
+                ProviderId.GITHUB, ProviderId.NVIDIA, ProviderId.COLAB_QWEN,
+                ProviderId.OPENROUTER_CLAUDE, ProviderId.CLAUDE
             )
             BroSkill.CODE -> listOf(
-                ProviderId.CLAUDE,
-                ProviderId.OPENROUTER_CLAUDE,
-                ProviderId.COLAB_QWEN,
-                ProviderId.GEMINI,
-                ProviderId.GITHUB,
-                ProviderId.MISTRAL,
-                ProviderId.DEEPSEEK_OR_OPENROUTER(),
-                ProviderId.GROQ,
-                ProviderId.CEREBRAS,
-                ProviderId.NVIDIA,
-                ProviderId.CLOUDFLARE
+                ProviderId.CLAUDE, ProviderId.OPENROUTER_CLAUDE, ProviderId.COLAB_QWEN,
+                ProviderId.GEMINI, ProviderId.GITHUB, ProviderId.MISTRAL,
+                ProviderId.OPENROUTER, ProviderId.GROQ, ProviderId.CEREBRAS,
+                ProviderId.NVIDIA, ProviderId.CLOUDFLARE
             )
             BroSkill.REASON -> listOf(
-                ProviderId.CLAUDE,
-                ProviderId.OPENROUTER_CLAUDE,
-                ProviderId.GEMINI,
-                ProviderId.GITHUB,
-                ProviderId.NVIDIA,
-                ProviderId.OPENROUTER,
-                ProviderId.GROQ,
-                ProviderId.CEREBRAS,
-                ProviderId.MISTRAL,
-                ProviderId.COLAB_QWEN,
-                ProviderId.CLOUDFLARE
+                ProviderId.CLAUDE, ProviderId.OPENROUTER_CLAUDE, ProviderId.GEMINI,
+                ProviderId.GITHUB, ProviderId.NVIDIA, ProviderId.OPENROUTER,
+                ProviderId.GROQ, ProviderId.CEREBRAS, ProviderId.MISTRAL,
+                ProviderId.COLAB_QWEN, ProviderId.CLOUDFLARE
             )
             BroSkill.LONG -> listOf(
-                ProviderId.CLAUDE,
-                ProviderId.OPENROUTER_CLAUDE,
-                ProviderId.GEMINI,
-                ProviderId.OPENROUTER,
-                ProviderId.MISTRAL,
-                ProviderId.GITHUB,
-                ProviderId.GROQ,
-                ProviderId.NVIDIA,
-                ProviderId.CEREBRAS,
-                ProviderId.COLAB_QWEN,
-                ProviderId.CLOUDFLARE
+                ProviderId.CLAUDE, ProviderId.OPENROUTER_CLAUDE, ProviderId.GEMINI,
+                ProviderId.OPENROUTER, ProviderId.MISTRAL, ProviderId.GITHUB,
+                ProviderId.GROQ, ProviderId.NVIDIA, ProviderId.CEREBRAS,
+                ProviderId.COLAB_QWEN, ProviderId.CLOUDFLARE
             )
             BroSkill.GENERAL -> listOf(
-                ProviderId.CLAUDE,
-                ProviderId.OPENROUTER_CLAUDE,
-                ProviderId.GEMINI,
-                ProviderId.GROQ,
-                ProviderId.CEREBRAS,
-                ProviderId.MISTRAL,
-                ProviderId.OPENROUTER,
-                ProviderId.GITHUB,
-                ProviderId.NVIDIA,
-                ProviderId.CLOUDFLARE,
-                ProviderId.COLAB_QWEN
+                ProviderId.CLAUDE, ProviderId.OPENROUTER_CLAUDE, ProviderId.GEMINI,
+                ProviderId.GROQ, ProviderId.CEREBRAS, ProviderId.MISTRAL,
+                ProviderId.OPENROUTER, ProviderId.GITHUB, ProviderId.NVIDIA,
+                ProviderId.CLOUDFLARE, ProviderId.COLAB_QWEN
             )
         }.distinct()
     }
-
-    private fun ProviderId.Companion.DEEPSEEK_OR_OPENROUTER() = ProviderId.OPENROUTER
 
     private fun resolveKey(context: Context, provider: ProviderId): String {
         return when (provider) {
@@ -162,10 +112,6 @@ object Providers {
         }
     }
 
-    /**
-     * Streams response across the skill-ordered router with automatic fallback,
-     * 60s 429 cooldown, Google Search grounding, and instant job cancellation.
-     */
     suspend fun streamChat(
         context: Context,
         prompt: String,
@@ -178,7 +124,6 @@ object Providers {
         val candidates = getSkillOrder(skill)
         val errors = mutableListOf<String>()
 
-        // Optional web grounding context for Claude/OpenAI-compatible providers
         val groundingContext = if (enableWebGrounding) {
             onStatus("GROUNDING WEB...")
             WebGrounding.fetchSearchSnippets(context, prompt, httpClient)
@@ -203,53 +148,21 @@ object Providers {
             try {
                 val out = StringBuilder()
                 when (provider) {
-                    ProviderId.CLAUDE -> streamAnthropic(
-                        apiKey = rawKey,
-                        systemPrompt = systemPrompt,
-                        userPrompt = augmentedPrompt,
-                        onToken = {
-                            out.append(it)
-                            onToken(it)
-                        }
-                    )
-                    ProviderId.GEMINI -> streamGemini(
-                        apiKey = rawKey,
-                        systemPrompt = systemPrompt,
-                        userPrompt = prompt,
-                        enableGoogleSearch = enableWebGrounding,
-                        onToken = {
-                            out.append(it)
-                            onToken(it)
-                        }
-                    )
-                    ProviderId.CLOUDFLARE -> callCloudflare(
-                        compositeKey = rawKey,
-                        systemPrompt = systemPrompt,
-                        userPrompt = augmentedPrompt,
-                        onToken = {
-                            out.append(it)
-                            onToken(it)
-                        }
-                    )
-                    ProviderId.COLAB_QWEN -> callColabQwen(
-                        compositeKey = rawKey,
-                        systemPrompt = systemPrompt,
-                        userPrompt = augmentedPrompt,
-                        onToken = {
-                            out.append(it)
-                            onToken(it)
-                        }
-                    )
-                    else -> streamOpenAiCompatible(
-                        provider = provider,
-                        apiKey = rawKey,
-                        systemPrompt = systemPrompt,
-                        userPrompt = augmentedPrompt,
-                        onToken = {
-                            out.append(it)
-                            onToken(it)
-                        }
-                    )
+                    ProviderId.CLAUDE -> streamAnthropic(rawKey, systemPrompt, augmentedPrompt) {
+                        out.append(it); onToken(it)
+                    }
+                    ProviderId.GEMINI -> streamGemini(rawKey, systemPrompt, prompt, enableWebGrounding) {
+                        out.append(it); onToken(it)
+                    }
+                    ProviderId.CLOUDFLARE -> callCloudflare(rawKey, systemPrompt, augmentedPrompt) {
+                        out.append(it); onToken(it)
+                    }
+                    ProviderId.COLAB_QWEN -> callColabQwen(rawKey, systemPrompt, augmentedPrompt) {
+                        out.append(it); onToken(it)
+                    }
+                    else -> streamOpenAiCompatible(provider, rawKey, systemPrompt, augmentedPrompt) {
+                        out.append(it); onToken(it)
+                    }
                 }
 
                 if (out.isNotEmpty()) {
@@ -267,43 +180,29 @@ object Providers {
             } catch (e: HttpStatusException) {
                 if (e.code == 429) {
                     markCooldown(provider)
-                    errors.add("${provider.displayName}: 429 Rate Limit (60s cooldown)")
+                    errors.add("${provider.displayName}: 429 Rate Limit")
                 } else {
                     errors.add("${provider.displayName}: HTTP ${e.code}")
                 }
             } catch (e: Exception) {
                 if (e.message?.contains("Canceled", ignoreCase = true) == true) {
-                    throw CancellationException("Job cancelled by user")
+                    throw CancellationException("Job cancelled")
                 }
                 errors.add("${provider.displayName}: ${e.localizedMessage ?: "Failed"}")
             }
         }
 
-        val summary = if (errors.isEmpty()) {
-            "No API keys configured in Settings Vault. Add at least one key (Gemini, Groq, OpenRouter, Claude, etc.)."
-        } else {
-            "All active providers failed:\n" + errors.joinToString("\n")
-        }
-        Result.failure(IllegalStateException(summary))
+        Result.failure(IllegalStateException("All providers failed or no keys configured.\n" + errors.joinToString("\n")))
     }
 
-    private fun streamAnthropic(
-        apiKey: String,
-        systemPrompt: String,
-        userPrompt: String,
-        onToken: (String) -> Unit
-    ) {
+    private fun streamAnthropic(apiKey: String, system: String, prompt: String, onToken: (String) -> Unit) {
         val payload = JSONObject().apply {
             put("model", "claude-3-5-sonnet-latest")
             put("max_tokens", 4096)
             put("stream", true)
-            put("system", systemPrompt)
-            put("messages", JSONArray().put(JSONObject().apply {
-                put("role", "user")
-                put("content", userPrompt)
-            }))
+            put("system", system)
+            put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", prompt)))
         }
-
         val request = Request.Builder()
             .url("https://api.anthropic.com/v1/messages")
             .addHeader("x-api-key", apiKey)
@@ -311,68 +210,44 @@ object Providers {
             .addHeader("content-type", "application/json")
             .post(payload.toString().toRequestBody("application/json".toMediaType()))
             .build()
-
-        executeSseStream(request) { dataLine ->
-            if (dataLine == "[DONE]") return@executeSseStream
-            val json = JSONObject(dataLine)
-            if (json.optString("type") == "content_block_delta") {
-                val delta = json.optJSONObject("delta")
-                val text = delta?.optString("text", "") ?: ""
-                if (text.isNotEmpty()) onToken(text)
-            }
-        }
-    }
-
-    private fun streamGemini(
-        apiKey: String,
-        systemPrompt: String,
-        userPrompt: String,
-        enableGoogleSearch: Boolean,
-        onToken: (String) -> Unit
-    ) {
-        val payload = JSONObject().apply {
-            put("systemInstruction", JSONObject().apply {
-                put("parts", JSONArray().put(JSONObject().put("text", systemPrompt)))
-            })
-            put("contents", JSONArray().put(JSONObject().apply {
-                put("role", "user")
-                put("parts", JSONArray().put(JSONObject().put("text", userPrompt)))
-            }))
-            if (enableGoogleSearch) {
-                put("tools", JSONArray().put(JSONObject().put("googleSearch", JSONObject())))
-            }
-        }
-
-        val url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse&key=$apiKey"
-        val request = Request.Builder()
-            .url(url)
-            .addHeader("Content-Type", "application/json")
-            .post(payload.toString().toRequestBody("application/json".toMediaType()))
-            .build()
-
-        executeSseStream(request) { dataLine ->
-            if (dataLine == "[DONE]") return@executeSseStream
-            val json = JSONObject(dataLine)
-            val candidates = json.optJSONArray("candidates") ?: return@executeSseStream
-            if (candidates.length() > 0) {
-                val parts = candidates.getJSONObject(0)
-                    .optJSONObject("content")
-                    ?.optJSONArray("parts") ?: return@executeSseStream
-                for (i in 0 until parts.length()) {
-                    val text = parts.getJSONObject(i).optString("text", "")
+        executeSseStream(request) { line ->
+            if (line != "[DONE]") {
+                val json = JSONObject(line)
+                if (json.optString("type") == "content_block_delta") {
+                    val text = json.optJSONObject("delta")?.optString("text", "") ?: ""
                     if (text.isNotEmpty()) onToken(text)
                 }
             }
         }
     }
 
-    private fun streamOpenAiCompatible(
-        provider: ProviderId,
-        apiKey: String,
-        systemPrompt: String,
-        userPrompt: String,
-        onToken: (String) -> Unit
-    ) {
+    private fun streamGemini(apiKey: String, system: String, prompt: String, search: Boolean, onToken: (String) -> Unit) {
+        val payload = JSONObject().apply {
+            put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", system))))
+            put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text", prompt)))))
+            if (search) put("tools", JSONArray().put(JSONObject().put("googleSearch", JSONObject())))
+        }
+        val request = Request.Builder()
+            .url("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse&key=$apiKey")
+            .addHeader("Content-Type", "application/json")
+            .post(payload.toString().toRequestBody("application/json".toMediaType()))
+            .build()
+        executeSseStream(request) { line ->
+            if (line != "[DONE]") {
+                val json = JSONObject(line)
+                val cands = json.optJSONArray("candidates") ?: return@executeSseStream
+                if (cands.length() > 0) {
+                    val parts = cands.getJSONObject(0).optJSONObject("content")?.optJSONArray("parts") ?: return@executeSseStream
+                    for (i in 0 until parts.length()) {
+                        val t = parts.getJSONObject(i).optString("text", "")
+                        if (t.isNotEmpty()) onToken(t)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun streamOpenAiCompatible(provider: ProviderId, apiKey: String, system: String, prompt: String, onToken: (String) -> Unit) {
         val (endpoint, model) = when (provider) {
             ProviderId.GROQ -> "https://api.groq.com/openai/v1/chat/completions" to "llama-3.3-70b-versatile"
             ProviderId.CEREBRAS -> "https://api.cerebras.ai/v1/chat/completions" to "llama-3.3-70b"
@@ -383,13 +258,12 @@ object Providers {
             else -> "https://openrouter.ai/api/v1/chat/completions" to "deepseek/deepseek-chat:free"
         }
 
-        val messages = JSONArray()
-            .put(JSONObject().put("role", "system").put("content", systemPrompt))
-            .put(JSONObject().put("role", "user").put("content", userPrompt))
-
         val payload = JSONObject().apply {
             put("model", model)
-            put("messages", messages)
+            put("messages", JSONArray()
+                .put(JSONObject().put("role", "system").put("content", system))
+                .put(JSONObject().put("role", "user").put("content", prompt))
+            )
             put("stream", true)
         }
 
@@ -398,126 +272,79 @@ object Providers {
             .addHeader("Authorization", "Bearer $apiKey")
             .addHeader("Content-Type", "application/json")
 
-        if (provider == ProviderId.OPENROUTER || provider == ProviderId.OPENROUTER_CLAUDE) {
-            reqBuilder.addHeader("HTTP-Referer", "https://github.com/rachamadhav28-spec/Bro-direct")
-            reqBuilder.addHeader("X-Title", "BRO Tactical Assistant")
-        }
-
-        val request = reqBuilder
-            .post(payload.toString().toRequestBody("application/json".toMediaType()))
-            .build()
-
-        executeSseStream(request) { dataLine ->
-            if (dataLine == "[DONE]") return@executeSseStream
-            val json = JSONObject(dataLine)
-            val choices = json.optJSONArray("choices") ?: return@executeSseStream
-            if (choices.length() > 0) {
-                val delta = choices.getJSONObject(0).optJSONObject("delta")
-                val content = delta?.optString("content", "") ?: ""
-                if (content.isNotEmpty()) onToken(content)
+        val request = reqBuilder.post(payload.toString().toRequestBody("application/json".toMediaType())).build()
+        executeSseStream(request) { line ->
+            if (line != "[DONE]") {
+                val json = JSONObject(line)
+                val choices = json.optJSONArray("choices") ?: return@executeSseStream
+                if (choices.length() > 0) {
+                    val content = choices.getJSONObject(0).optJSONObject("delta")?.optString("content", "") ?: ""
+                    if (content.isNotEmpty()) onToken(content)
+                }
             }
         }
     }
 
-    /**
-     * Cloudflare format: ACCOUNTID:TOKEN
-     */
-    private fun callCloudflare(
-        compositeKey: String,
-        systemPrompt: String,
-        userPrompt: String,
-        onToken: (String) -> Unit
-    ) {
-        val parts = compositeKey.split(":", limit = 2)
-        if (parts.size < 2) throw IllegalArgumentException("Cloudflare key must be ACCOUNTID:TOKEN")
-        val accountId = parts[0].trim()
-        val token = parts[1].trim()
-
+    private fun callCloudflare(key: String, system: String, prompt: String, onToken: (String) -> Unit) {
+        val parts = key.split(":", limit = 2)
         val payload = JSONObject().apply {
             put("messages", JSONArray()
-                .put(JSONObject().put("role", "system").put("content", systemPrompt))
-                .put(JSONObject().put("role", "user").put("content", userPrompt))
+                .put(JSONObject().put("role", "system").put("content", system))
+                .put(JSONObject().put("role", "user").put("content", prompt))
             )
         }
-
-        val url = "https://api.cloudflare.com/client/v4/accounts/$accountId/ai/run/@cf/meta/llama-3.1-8b-instruct"
         val request = Request.Builder()
-            .url(url)
-            .addHeader("Authorization", "Bearer $token")
+            .url("https://api.cloudflare.com/client/v4/accounts/${parts[0].trim()}/ai/run/@cf/meta/llama-3.1-8b-instruct")
+            .addHeader("Authorization", "Bearer ${parts[1].trim()}")
             .addHeader("Content-Type", "application/json")
             .post(payload.toString().toRequestBody("application/json".toMediaType()))
             .build()
-
         val call = httpClient.newCall(request)
         activeCall.set(call)
-        call.execute().use { response ->
-            if (!response.isSuccessful) throw HttpStatusException(response.code)
-            val body = response.body?.string() ?: ""
-            val resultText = JSONObject(body).optJSONObject("result")?.optString("response", "") ?: ""
-            if (resultText.isNotEmpty()) onToken(resultText)
-        }
-    }
-
-    /**
-     * Colab Qwen format: URL SECRET (or URL|SECRET)
-     */
-    private fun callColabQwen(
-        compositeKey: String,
-        systemPrompt: String,
-        userPrompt: String,
-        onToken: (String) -> Unit
-    ) {
-        val parts = compositeKey.trim().split("\\s+|\\|".toRegex(), limit = 2)
-        val baseUrl = parts[0].trim().removeSuffix("/")
-        val secret = if (parts.size > 1) parts[1].trim() else ""
-
-        val payload = JSONObject().apply {
-            put("model", "qwen2.5-coder")
-            put("messages", JSONArray()
-                .put(JSONObject().put("role", "system").put("content", systemPrompt))
-                .put(JSONObject().put("role", "user").put("content", userPrompt))
-            )
-        }
-
-        val reqBuilder = Request.Builder()
-            .url("$baseUrl/v1/chat/completions")
-            .addHeader("Content-Type", "application/json")
-        if (secret.isNotEmpty()) {
-            reqBuilder.addHeader("Authorization", "Bearer $secret")
-        }
-
-        val call = httpClient.newCall(reqBuilder.post(payload.toString().toRequestBody("application/json".toMediaType())).build())
-        activeCall.set(call)
-        call.execute().use { response ->
-            if (!response.isSuccessful) throw HttpStatusException(response.code)
-            val body = response.body?.string() ?: ""
-            val root = JSONObject(body)
-            val text = root.optJSONArray("choices")
-                ?.optJSONObject(0)
-                ?.optJSONObject("message")
-                ?.optString("content", "")
-                ?: root.optString("response", "")
+        call.execute().use { resp ->
+            if (!resp.isSuccessful) throw HttpStatusException(resp.code)
+            val text = JSONObject(resp.body?.string() ?: "{}").optJSONObject("result")?.optString("response", "") ?: ""
             if (text.isNotEmpty()) onToken(text)
         }
     }
 
-    private fun executeSseStream(request: Request, onDataLine: (String) -> Unit) {
+    private fun callColabQwen(key: String, system: String, prompt: String, onToken: (String) -> Unit) {
+        val parts = key.trim().split("\\s+|\\|".toRegex(), limit = 2)
+        val payload = JSONObject().apply {
+            put("model", "qwen2.5-coder")
+            put("messages", JSONArray()
+                .put(JSONObject().put("role", "system").put("content", system))
+                .put(JSONObject().put("role", "user").put("content", prompt))
+            )
+        }
+        val reqBuilder = Request.Builder()
+            .url("${parts[0].trim().removeSuffix("/")}/v1/chat/completions")
+            .addHeader("Content-Type", "application/json")
+        if (parts.size > 1) reqBuilder.addHeader("Authorization", "Bearer ${parts[1].trim()}")
+
+        val call = httpClient.newCall(reqBuilder.post(payload.toString().toRequestBody("application/json".toMediaType())).build())
+        activeCall.set(call)
+        call.execute().use { resp ->
+            if (!resp.isSuccessful) throw HttpStatusException(resp.code)
+            val root = JSONObject(resp.body?.string() ?: "{}")
+            val text = root.optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")?.optString("content", "") ?: ""
+            if (text.isNotEmpty()) onToken(text)
+        }
+    }
+
+    private fun executeSseStream(request: Request, onLine: (String) -> Unit) {
         val call = httpClient.newCall(request)
         activeCall.set(call)
-        call.execute().use { response ->
-            if (!response.isSuccessful) {
-                throw HttpStatusException(response.code)
-            }
-            val stream = response.body?.byteStream() ?: return
+        call.execute().use { resp ->
+            if (!resp.isSuccessful) throw HttpStatusException(resp.code)
+            val stream = resp.body?.byteStream() ?: return
             BufferedReader(InputStreamReader(stream, Charsets.UTF_8)).use { reader ->
                 var line: String?
                 while (reader.readLine().also { line = it } != null) {
                     val trimmed = line?.trim() ?: continue
                     if (trimmed.startsWith("data:")) {
-                        val payload = trimmed.removePrefix("data:").trim()
-                        if (payload.isNotEmpty()) {
-                            onDataLine(payload)
-                        }
+                        val p = trimmed.removePrefix("data:").trim()
+                        if (p.isNotEmpty()) onLine(p)
                     }
                 }
             }
