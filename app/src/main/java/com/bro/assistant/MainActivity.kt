@@ -48,8 +48,8 @@ data class ChatMessage(
     val isStreaming: Boolean = false
 )
 
-enum class BroScreen {
-    CHAT, MOTION_LAB, VAULT_SETTINGS
+enum class AppScreen {
+    CHAT, SETTINGS
 }
 
 class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
@@ -63,15 +63,12 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
 
     var isListeningState by mutableStateOf(false)
     var isSpeakingState by mutableStateOf(false)
-    var currentStatusText by mutableStateOf("SYSTEM ARMED")
+    var currentStatusText by mutableStateOf("Ready")
     var userTypedInput by mutableStateOf("")
     var selectedSkill by mutableStateOf(BroSkill.GENERAL)
     var useWebGrounding by mutableStateOf(false)
-    var activeThemeMode by mutableStateOf("DARK")
-    var reducedMotion by mutableStateOf(false)
-    var currentActiveProvider by mutableStateOf("AUTO")
-    var currentScreen by mutableStateOf(BroScreen.CHAT)
-    var showSplash by mutableStateOf(true)
+    var currentActiveProvider by mutableStateOf("Auto")
+    var currentScreen by mutableStateOf(AppScreen.CHAT)
 
     val chatMessages = mutableStateListOf<ChatMessage>()
 
@@ -79,97 +76,86 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         super.onCreate(savedInstanceState)
         tts = TextToSpeech(this, this)
         speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this)
-        activeThemeMode = SecretBox.getSetting(this, "theme_mode", "DARK")
-        reducedMotion = SecretBox.getSetting(this, "reduced_motion", "false") == "true"
 
         if (chatMessages.isEmpty()) {
             val briefing = try {
-                val b = Briefing.generateMorningBriefing(this)
-                "${b.greeting} [${b.timeString}]\n• ${b.calendarSummary}\n• ${b.proactiveTip}"
+                Briefing.generateMorningBriefing(this)
             } catch (_: Exception) {
-                "BRO Tactical Assistant Online. Configure API keys in VAULT or start chatting."
+                "Hello Madhav, BRO is online and ready."
             }
-            chatMessages.add(ChatMessage(sender = "BRO", text = briefing, provider = "JARVIS CORE"))
+            chatMessages.add(ChatMessage(sender = "BRO", text = briefing, provider = "Assistant"))
         }
 
         setContent {
-            BroTheme(themeMode = activeThemeMode) {
-                LaunchedEffect(Unit) {
-                    delay(1100L)
-                    showSplash = false
-                }
-
-                // Splash is always dark per Master Prompt rules
-                if (showSplash) {
-                    AlwaysDarkCinematicSplash()
-                } else {
-                    Surface(modifier = Modifier.fillMaxSize(), color = BroDesign.ObsidianBg) {
-                        Column(
+            BroTheme {
+                Surface(modifier = Modifier.fillMaxSize(), color = BroDesign.Background) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .statusBarsPadding()
+                            .navigationBarsPadding()
+                    ) {
+                        // Clean Top Bar
+                        Row(
                             modifier = Modifier
-                                .fillMaxSize()
-                                .background(BroDesign.ObsidianBg)
-                                .statusBarsPadding()
-                                .navigationBarsPadding()
+                                .fillMaxWidth()
+                                .background(BroDesign.Surface)
+                                .padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            TopTacticalBar(
-                                statusText = currentStatusText,
-                                isListening = isListeningState,
-                                isSpeaking = isSpeakingState,
-                                currentScreen = currentScreen,
-                                onScreenSelected = { currentScreen = it },
-                                logoAnimId = MotionKit.getSlotAnim(this@MainActivity, "logo", 75).id,
-                                reducedMotion = reducedMotion
-                            )
-
-                            Box(modifier = Modifier.weight(1f)) {
-                                when (currentScreen) {
-                                    BroScreen.CHAT -> MainChatHudView(
-                                        context = this@MainActivity,
-                                        messages = chatMessages,
-                                        statusText = currentStatusText,
-                                        typedInput = userTypedInput,
-                                        onInputChanged = { userTypedInput = it },
-                                        isListening = isListeningState,
-                                        skill = selectedSkill,
-                                        onSkillSelected = { selectedSkill = it },
-                                        useWebGrounding = useWebGrounding,
-                                        onGroundingToggled = { useWebGrounding = it },
-                                        activeProvider = currentActiveProvider,
-                                        reducedMotion = reducedMotion,
-                                        onSend = { sendPrompt(userTypedInput) },
-                                        onStop = {
-                                            Providers.cancelActiveJob()
-                                            currentStatusText = "JOB HALTED"
-                                        },
-                                        onMicClicked = {
-                                            if (ContextCompat.checkSelfPermission(
-                                                    this@MainActivity,
-                                                    Manifest.permission.RECORD_AUDIO
-                                                ) == PackageManager.PERMISSION_GRANTED
-                                            ) {
-                                                startListeningVoice()
-                                            } else {
-                                                micLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                                            }
-                                        }
-                                    )
-                                    BroScreen.MOTION_LAB -> MotionLabPanel(
-                                        context = this@MainActivity,
-                                        reducedMotion = reducedMotion,
-                                        onReducedMotionChanged = {
-                                            reducedMotion = it
-                                            SecretBox.saveSetting(this@MainActivity, "reduced_motion", it.toString())
-                                        }
-                                    )
-                                    BroScreen.VAULT_SETTINGS -> VaultSettingsPanel(
-                                        context = this@MainActivity,
-                                        themeMode = activeThemeMode,
-                                        onThemeChanged = {
-                                            activeThemeMode = it
-                                            SecretBox.saveSetting(this@MainActivity, "theme_mode", it)
-                                        }
-                                    )
+                            Column {
+                                Text("BRO Assistant", style = BroDesign.HeaderStyle)
+                                Text(currentStatusText, style = BroDesign.LabelStyle)
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Box(
+                                    modifier = Modifier
+                                        .clip(BroDesign.PillShape)
+                                        .background(if (currentScreen == AppScreen.CHAT) BroDesign.PrimaryAccent else BroDesign.SurfaceElevated)
+                                        .clickable { currentScreen = AppScreen.CHAT }
+                                        .padding(horizontal = 14.dp, vertical = 6.dp)
+                                ) {
+                                    Text("Chat", style = BroDesign.LabelStyle.copy(color = Color.White))
                                 }
+                                Box(
+                                    modifier = Modifier
+                                        .clip(BroDesign.PillShape)
+                                        .background(if (currentScreen == AppScreen.SETTINGS) BroDesign.PrimaryAccent else BroDesign.SurfaceElevated)
+                                        .clickable { currentScreen = AppScreen.SETTINGS }
+                                        .padding(horizontal = 14.dp, vertical = 6.dp)
+                                ) {
+                                    Text("Settings", style = BroDesign.LabelStyle.copy(color = Color.White))
+                                }
+                            }
+                        }
+
+                        Box(modifier = Modifier.weight(1f)) {
+                            when (currentScreen) {
+                                AppScreen.CHAT -> CleanChatView(
+                                    messages = chatMessages,
+                                    typedInput = userTypedInput,
+                                    onInputChanged = { userTypedInput = it },
+                                    isListening = isListeningState,
+                                    skill = selectedSkill,
+                                    onSkillSelected = { selectedSkill = it },
+                                    useWebGrounding = useWebGrounding,
+                                    onGroundingToggled = { useWebGrounding = it },
+                                    activeProvider = currentActiveProvider,
+                                    onSend = { sendPrompt(userTypedInput) },
+                                    onStop = {
+                                        Providers.cancelActiveJob()
+                                        currentStatusText = "Halted"
+                                    },
+                                    onMicClicked = {
+                                        if (ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                                            startListeningVoice()
+                                        } else {
+                                            micLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                        }
+                                    }
+                                )
+                                AppScreen.SETTINGS -> SettingsView(context = this@MainActivity)
                             }
                         }
                     }
@@ -188,12 +174,12 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
         }
         speechRecognizer?.setRecognitionListener(object : RecognitionListener {
-            override fun onReadyForSpeech(params: Bundle?) { isListeningState = true; currentStatusText = "LISTENING..." }
+            override fun onReadyForSpeech(params: Bundle?) { isListeningState = true; currentStatusText = "Listening..." }
             override fun onBeginningOfSpeech() {}
             override fun onRmsChanged(rmsdB: Float) {}
             override fun onBufferReceived(buffer: ByteArray?) {}
-            override fun onEndOfSpeech() { isListeningState = false; currentStatusText = "PROCESSING..." }
-            override fun onError(error: Int) { isListeningState = false; currentStatusText = "MIC READY" }
+            override fun onEndOfSpeech() { isListeningState = false; currentStatusText = "Processing..." }
+            override fun onError(error: Int) { isListeningState = false; currentStatusText = "Ready" }
             override fun onResults(results: Bundle?) {
                 isListeningState = false
                 val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
@@ -216,7 +202,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         userTypedInput = ""
 
         val botId = java.util.UUID.randomUUID().toString()
-        chatMessages.add(ChatMessage(id = botId, sender = "BRO", text = "ROUTING...", isStreaming = true))
+        chatMessages.add(ChatMessage(id = botId, sender = "BRO", text = "Thinking...", isStreaming = true))
 
         scope.launch {
             val result = Providers.streamChat(
@@ -229,7 +215,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                     val idx = chatMessages.indexOfFirst { it.id == botId }
                     if (idx != -1) {
                         val curr = chatMessages[idx]
-                        val nextText = if (curr.text == "ROUTING...") token else curr.text + token
+                        val nextText = if (curr.text == "Thinking...") token else curr.text + token
                         chatMessages[idx] = curr.copy(text = nextText)
                     }
                 }
@@ -240,26 +226,15 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 result.fold(
                     onSuccess = { res ->
                         currentActiveProvider = res.providerUsed.displayName
-                        currentStatusText = "ONLINE [${res.providerUsed.name}]"
-                        chatMessages[idx] = chatMessages[idx].copy(
-                            provider = res.providerUsed.displayName,
-                            isStreaming = false
-                        )
-                        if (res.fullText.length < 320) {
-                            isSpeakingState = true
+                        currentStatusText = "Ready"
+                        chatMessages[idx] = chatMessages[idx].copy(provider = res.providerUsed.displayName, isStreaming = false)
+                        if (res.fullText.length < 300) {
                             tts?.speak(res.fullText.replace(Regex("[#*`_]"), ""), TextToSpeech.QUEUE_FLUSH, null, "tts")
-                            scope.launch {
-                                delay(2200L)
-                                isSpeakingState = false
-                            }
                         }
                     },
                     onFailure = { err ->
-                        currentStatusText = "CHECK VAULT"
-                        chatMessages[idx] = chatMessages[idx].copy(
-                            text = "⚠️ ${err.localizedMessage}",
-                            isStreaming = false
-                        )
+                        currentStatusText = "Error"
+                        chatMessages[idx] = chatMessages[idx].copy(text = "❌ ${err.localizedMessage}", isStreaming = false)
                     }
                 )
             }
@@ -274,87 +249,8 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
 }
 
 @Composable
-fun AlwaysDarkCinematicSplash() {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color(0xFF090A0F)),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            CyberRadarCore(isActive = true, isSpeaking = false, size = 112.dp)
-            Spacer(modifier = Modifier.height(16.dp))
-            Text("BRO // TACTICAL OS", style = BroDesign.HeaderStyle)
-            Spacer(modifier = Modifier.height(4.dp))
-            Text("SIGNAL HEX CORE INITIALIZED", style = BroDesign.HudLabelStyle)
-        }
-    }
-}
-
-@Composable
-fun TopTacticalBar(
-    statusText: String,
-    isListening: Boolean,
-    isSpeaking: Boolean,
-    currentScreen: BroScreen,
-    onScreenSelected: (BroScreen) -> Unit,
-    logoAnimId: Int,
-    reducedMotion: Boolean
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(BroDesign.CarbonSurface)
-            .border(1.dp, BroDesign.BorderGrid, BroDesign.CardShape)
-            .padding(10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-            Box(modifier = Modifier.applyBroMotion(logoAnimId, reducedMotion)) {
-                CyberRadarCore(isActive = isListening, isSpeaking = isSpeaking, size = 40.dp)
-            }
-            Spacer(modifier = Modifier.width(10.dp))
-            Column {
-                Text("BRO HUD", style = BroDesign.HeaderStyle.copy(fontSize = 15.sp))
-                Text(statusText, style = BroDesign.HudLabelStyle.copy(color = BroDesign.VoltLime, fontSize = 9.sp))
-            }
-        }
-
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            BroScreen.values().forEach { screen ->
-                val sel = currentScreen == screen
-                val label = when (screen) {
-                    BroScreen.CHAT -> "CHAT"
-                    BroScreen.MOTION_LAB -> "104 LAB"
-                    BroScreen.VAULT_SETTINGS -> "VAULT"
-                }
-                Box(
-                    modifier = Modifier
-                        .clip(BroDesign.PillShape)
-                        .background(if (sel) BroDesign.VoltLime else BroDesign.ElevatedTactile)
-                        .border(1.dp, if (sel) BroDesign.VoltLime else BroDesign.BorderGrid, BroDesign.PillShape)
-                        .clickable { onScreenSelected(screen) }
-                        .padding(horizontal = 10.dp, vertical = 6.dp)
-                ) {
-                    Text(
-                        text = label,
-                        style = BroDesign.HudLabelStyle.copy(
-                            color = if (sel) Color.Black else BroDesign.CrispWhite,
-                            fontSize = 10.sp
-                        )
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun MainChatHudView(
-    context: android.content.Context,
+fun CleanChatView(
     messages: List<ChatMessage>,
-    statusText: String,
     typedInput: String,
     onInputChanged: (String) -> Unit,
     isListening: Boolean,
@@ -363,26 +259,22 @@ fun MainChatHudView(
     useWebGrounding: Boolean,
     onGroundingToggled: (Boolean) -> Unit,
     activeProvider: String,
-    reducedMotion: Boolean,
     onSend: () -> Unit,
     onStop: () -> Unit,
     onMicClicked: () -> Unit
 ) {
     val listState = rememberLazyListState()
-    val msgAnimId = MotionKit.getSlotAnim(context, "messages", 1).id
-    val sendAnimId = MotionKit.getSlotAnim(context, "send", 47).id
-
-    LaunchedEffect(messages.size, messages.lastOrNull()?.text) {
+    LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.size - 1)
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // Skill Router + Web Search Grounding Bar
+        // Skill Router Selection
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             BroSkill.values().forEach { s ->
@@ -390,248 +282,138 @@ fun MainChatHudView(
                 Box(
                     modifier = Modifier
                         .clip(BroDesign.PillShape)
-                        .background(if (sel) BroDesign.VoltLime else BroDesign.CarbonSurface)
-                        .border(1.dp, if (sel) BroDesign.VoltLime else BroDesign.BorderGrid, BroDesign.PillShape)
+                        .background(if (sel) BroDesign.PrimaryAccent else BroDesign.Surface)
                         .clickable { onSkillSelected(s) }
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                        .padding(horizontal = 12.dp, vertical = 6.dp)
                 ) {
-                    Text(
-                        text = s.name,
-                        style = BroDesign.HudLabelStyle.copy(
-                            color = if (sel) Color.Black else BroDesign.CrispWhite,
-                            fontSize = 10.sp
-                        )
-                    )
+                    Text(text = s.name, style = BroDesign.LabelStyle.copy(color = if (sel) Color.White else BroDesign.MutedText))
                 }
             }
             Spacer(modifier = Modifier.weight(1f))
             Box(
                 modifier = Modifier
                     .clip(BroDesign.PillShape)
-                    .background(if (useWebGrounding) BroDesign.CyberCyan else BroDesign.CarbonSurface)
-                    .border(1.dp, BroDesign.BorderGrid, BroDesign.PillShape)
+                    .background(if (useWebGrounding) BroDesign.SecondaryAccent else BroDesign.Surface)
                     .clickable { onGroundingToggled(!useWebGrounding) }
-                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                    .padding(horizontal = 10.dp, vertical = 6.dp)
             ) {
-                Text(
-                    text = if (useWebGrounding) "WEB: ON" else "WEB: OFF",
-                    style = BroDesign.HudLabelStyle.copy(
-                        color = if (useWebGrounding) Color.Black else BroDesign.MutedSteel,
-                        fontSize = 9.sp
-                    )
-                )
+                Text(text = if (useWebGrounding) "Web: ON" else "Web: OFF", style = BroDesign.LabelStyle.copy(color = if (useWebGrounding) Color.Black else BroDesign.MutedText))
             }
         }
 
-        // Chat Stream
+        // Messages List
         LazyColumn(
             state = listState,
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+                .padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
             contentPadding = PaddingValues(vertical = 8.dp)
         ) {
             items(messages, key = { it.id }) { msg ->
                 val isUser = msg.sender == "USER"
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .applyBroMotion(msgAnimId, reducedMotion),
-                    horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
-                ) {
-                    TacticalCard(
-                        modifier = Modifier.widthIn(max = 320.dp),
-                        accentColor = if (isUser) BroDesign.CyberCyan else BroDesign.VoltLime
-                    ) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start) {
+                    MinimalCard {
                         Text(
-                            text = if (isUser) "OPERATOR" else "BRO // ${msg.provider ?: activeProvider}",
-                            style = BroDesign.HudLabelStyle.copy(
-                                color = if (isUser) BroDesign.CyberCyan else BroDesign.VoltLime,
-                                fontSize = 9.sp
-                            )
+                            text = if (isUser) "You" else "BRO (${msg.provider ?: activeProvider})",
+                            style = BroDesign.LabelStyle.copy(color = if (isUser) BroDesign.SecondaryAccent else BroDesign.PrimaryAccent)
                         )
                         Spacer(modifier = Modifier.height(4.dp))
-                        Text(text = msg.text, style = BroDesign.BodyStyle.copy(fontSize = 14.sp))
+                        Text(text = msg.text, style = BroDesign.BodyStyle)
                     }
                 }
             }
         }
 
-        // Card-style Tactical Composer (Status left, Input center, Mic / Send / Stop right)
-        Column(
+        // Clean Bottom Composer
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(BroDesign.CarbonSurface)
-                .border(1.5.dp, BroDesign.BorderGrid, BroDesign.ComposerShape)
-                .padding(8.dp)
+                .background(BroDesign.Surface)
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(BroDesign.ComposerShape)
+                    .background(BroDesign.Background)
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
             ) {
-                Text("STATUS: $statusText", style = BroDesign.HudLabelStyle.copy(fontSize = 9.sp))
-                Text("ROUTE: ${skill.name}", style = BroDesign.HudLabelStyle.copy(color = BroDesign.CyberCyan, fontSize = 9.sp))
+                if (typedInput.isEmpty()) {
+                    Text("Type a message...", style = BroDesign.BodyStyle.copy(color = BroDesign.MutedText))
+                }
+                BasicTextField(
+                    value = typedInput,
+                    onValueChange = onInputChanged,
+                    textStyle = BroDesign.BodyStyle,
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
-            Spacer(modifier = Modifier.height(6.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .clip(BroDesign.PillShape)
-                        .background(BroDesign.ObsidianBg)
-                        .border(1.dp, BroDesign.BorderGrid, BroDesign.PillShape)
-                        .padding(horizontal = 10.dp, vertical = 10.dp)
-                ) {
-                    if (typedInput.isEmpty()) {
-                        Text(
-                            text = "Transmit command to BRO...",
-                            style = BroDesign.BodyStyle.copy(color = BroDesign.MutedSteel, fontSize = 13.sp)
-                        )
-                    }
-                    BasicTextField(
-                        value = typedInput,
-                        onValueChange = onInputChanged,
-                        textStyle = BroDesign.BodyStyle.copy(fontSize = 13.sp),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-                Spacer(modifier = Modifier.width(6.dp))
-                IconButton(
-                    onClick = onMicClicked,
-                    modifier = Modifier
-                        .size(38.dp)
-                        .clip(BroDesign.PillShape)
-                        .background(if (isListening) BroDesign.HyperOrange else BroDesign.ElevatedTactile)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Mic,
-                        contentDescription = "Mic",
-                        tint = if (isListening) Color.Black else BroDesign.VoltLime,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-                Spacer(modifier = Modifier.width(4.dp))
-                IconButton(
-                    onClick = onSend,
-                    modifier = Modifier
-                        .size(38.dp)
-                        .applyBroMotion(sendAnimId, reducedMotion)
-                        .clip(BroDesign.PillShape)
-                        .background(BroDesign.VoltLime)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Send,
-                        contentDescription = "Send",
-                        tint = Color.Black,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-                Spacer(modifier = Modifier.width(4.dp))
-                IconButton(
-                    onClick = onStop,
-                    modifier = Modifier
-                        .size(38.dp)
-                        .clip(BroDesign.PillShape)
-                        .background(BroDesign.DangerRed)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Stop,
-                        contentDescription = "Cancel Job",
-                        tint = Color.White,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
+            Spacer(modifier = Modifier.width(8.dp))
+            IconButton(onClick = onMicClicked) {
+                Icon(Icons.Default.Mic, contentDescription = "Voice", tint = if (isListening) BroDesign.SecondaryAccent else BroDesign.CrispWhite)
+            }
+            IconButton(onClick = onSend) {
+                Icon(Icons.Default.Send, contentDescription = "Send", tint = BroDesign.SecondaryAccent)
+            }
+            IconButton(onClick = onStop) {
+                Icon(Icons.Default.Stop, contentDescription = "Stop", tint = Color.Red)
             }
         }
     }
 }
 
 @Composable
-fun VaultSettingsPanel(
-    context: android.content.Context,
-    themeMode: String,
-    onThemeChanged: (String) -> Unit
-) {
-    var feedbackMsg by remember { mutableStateOf("Keys are whitespace-stripped & AES256-GCM encrypted.") }
-
+fun SettingsView(context: android.content.Context) {
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
-            TacticalCard(accentColor = BroDesign.CyberCyan) {
-                Text("SECRETBOX ENCRYPTED VAULT", style = BroDesign.HeaderStyle.copy(fontSize = 15.sp))
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(feedbackMsg, style = BroDesign.HudLabelStyle.copy(color = BroDesign.VoltLime, fontSize = 10.sp))
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf("DARK", "LIGHT", "AUTO").forEach { mode ->
-                        val sel = themeMode.equals(mode, ignoreCase = true)
-                        Box(
-                            modifier = Modifier
-                                .clip(BroDesign.PillShape)
-                                .background(if (sel) BroDesign.VoltLime else BroDesign.ElevatedTactile)
-                                .clickable { onThemeChanged(mode) }
-                                .padding(horizontal = 10.dp, vertical = 6.dp)
-                        ) {
-                            Text(
-                                text = "THEME: $mode",
-                                style = BroDesign.HudLabelStyle.copy(
-                                    color = if (sel) Color.Black else BroDesign.CrispWhite,
-                                    fontSize = 10.sp
-                                )
-                            )
-                        }
-                    }
-                }
+            MinimalCard {
+                Text("API Key Vault", style = BroDesign.HeaderStyle)
+                Text("Keys are securely encrypted on your device.", style = BroDesign.LabelStyle)
             }
         }
-
         items(ProviderId.values().toList(), key = { it.name }) { provider ->
             if (provider != ProviderId.OPENROUTER_CLAUDE) {
                 var keyInput by remember { mutableStateOf(SecretBox.getKey(context, provider.name)) }
-                TacticalCard {
+                MinimalCard {
                     Text(provider.displayName, style = BroDesign.HeaderStyle.copy(fontSize = 14.sp))
-                    Text("Format: ${provider.keyHint}", style = BroDesign.HudLabelStyle.copy(color = BroDesign.MutedSteel, fontSize = 10.sp))
                     Spacer(modifier = Modifier.height(6.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(
                             modifier = Modifier
                                 .weight(1f)
-                                .clip(BroDesign.PillShape)
-                                .background(BroDesign.ObsidianBg)
-                                .border(1.dp, BroDesign.BorderGrid, BroDesign.PillShape)
-                                .padding(horizontal = 10.dp, vertical = 8.dp)
+                                .clip(BroDesign.ComposerShape)
+                                .background(BroDesign.Background)
+                                .padding(horizontal = 12.dp, vertical = 10.dp)
                         ) {
                             if (keyInput.isEmpty()) {
-                                Text("Paste ${provider.name} key...", style = BroDesign.BodyStyle.copy(color = BroDesign.MutedSteel, fontSize = 12.sp))
+                                Text("Enter key...", style = BroDesign.BodyStyle.copy(color = BroDesign.MutedText, fontSize = 13.sp))
                             }
                             BasicTextField(
                                 value = keyInput,
                                 onValueChange = { keyInput = it },
-                                textStyle = BroDesign.BodyStyle.copy(fontSize = 12.sp),
+                                textStyle = BroDesign.BodyStyle.copy(fontSize = 13.sp),
                                 modifier = Modifier.fillMaxWidth()
                             )
                         }
-                        Spacer(modifier = Modifier.width(6.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
                         Box(
                             modifier = Modifier
                                 .clip(BroDesign.PillShape)
-                                .background(BroDesign.VoltLime)
+                                .background(BroDesign.PrimaryAccent)
                                 .clickable {
-                                    val res = SecretBox.saveKey(context, provider.name, keyInput)
-                                    feedbackMsg = res.fold(
-                                        onSuccess = { "✔ Saved ${provider.displayName} key!" },
-                                        onFailure = { "❌ ${it.localizedMessage}" }
-                                    )
+                                    SecretBox.saveKey(context, provider.name, keyInput)
                                 }
-                                .padding(horizontal = 12.dp, vertical = 8.dp)
+                                .padding(horizontal = 16.dp, vertical = 10.dp)
                         ) {
-                            Text("SAVE", style = BroDesign.HudLabelStyle.copy(color = Color.Black, fontSize = 10.sp))
+                            Text("Save", style = BroDesign.LabelStyle.copy(color = Color.White))
                         }
                     }
                 }
