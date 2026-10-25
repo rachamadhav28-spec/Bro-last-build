@@ -79,7 +79,16 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
 
         if (chatMessages.isEmpty()) {
             val briefing = try {
-                Briefing.generateMorningBriefing(this)
+                val b = Briefing.generateMorningBriefing(this)
+                listOf(
+                    b.greeting,
+                    b.timeString,
+                    b.alarmStatus,
+                    b.weatherStatus,
+                    b.calendarSummary,
+                    b.finishedTasksSummary,
+                    b.proactiveTip
+                ).filter { it.isNotBlank() }.joinToString("\n")
             } catch (_: Exception) {
                 "Hello Madhav, BRO is online and ready."
             }
